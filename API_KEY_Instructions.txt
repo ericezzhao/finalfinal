@@ -1,0 +1,2 @@
+Google Maps + Places: https://developers.google.com/maps/documentation/javascript/get-api-key
+Yelp Fusion: https://docs.developer.yelp.com/docs/fusion-authentication
