@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <title>To Eat List</title>
+    <style>
+        /* Map size */
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+    </style>
+    <link rel="stylesheet" type="text/css" href="../static/style.css">
+</head>
+<body>
+    <h1>To Eat List</h1>
+    <div>
+        <!-- Adds buttons and search box -->
+        <input id="search-box" type="text" placeholder="Search for a restaurant">
+        <button id="pin-button">Pin Restaurant</button>
+        <button id="remove-pin-button">Remove Pin</button>
+    </div>
+    <!--Div element for map -->
+    <div id="map"></div>
+    <h2>Pinned Restaurants</h2>
+    <ul id = "pinned-locations"></ul>
+    <script>
+        var map;
+        var marker;
+        var pinnedMarker = [];
+        var pinnedLocations = {};
+        var lastClickedLi = null;
+
+        // Initializes the map, implemented based on documentation:
+        // https://developers.google.com/maps/documentation/javascript
+        function initMap() {
+            // Centered in Seattle
+            var seattle = {lat: 47.608013, lng: -122.335167};
+            map = new google.maps.Map(
+                document.getElementById('map'), {zoom: 12, center: seattle});
+            marker = new google.maps.Marker();
+
+            // Initializes search box
+            var searchBox = new google.maps.places.SearchBox(document.getElementById('search-box'));
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(document.getElementById('search-box'));
+            
+            // Function that adds a pin to the searched location
+            function addPinnedLocation(place) {
+                var li = document.createElement('li');
+                li.textContent = place.name;
+                li.setAttribute('data-place-id', place.place_id)
+
+                // Adds it to the pinned list with a checkbox
+                var checkbox = document.createElement('input');
+                checkbox.setAttribute('type', 'checkbox');
+                checkbox.addEventListener('click', function(event) {
+                    event.stopPropagation();
+                    var placeId = li.getAttribute('data-place-id');
+                    if (pinnedLocations[placeId]) {
+                        pinnedLocations[placeId].visited = this.checked;
+                    }
+                });
+                li.appendChild(checkbox);
+
+                // Creates a link that directs to the yelp page for the location
+                var link = document.createElement('a');
+                link.setAttribute('href', '#');
+                link.setAttribute('id', 'yelp-link-' + place.place_id);
+                link.innerText = 'View Yelp Info';
+                li.appendChild(link);
+
+                // Clicking on link displays Yelp information
+                link.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    displayYelpInfo(place.placeId, li);
+                });
+
+                // Clicking on the restaurant name in the pinned list will focus the map onto that pin
+                // In addition, it is tracking that that was the most recent clicked
+                li.addEventListener('click', function() {
+                    var placeId = this.getAttribute('data-place-id');
+                    var marker = pinnedLocations[placeId];
+                    if (marker) {
+                        map.setCenter(marker.getPosition())
+                        if (lastClickedLi) {
+                            lastClickedLi.classList.remove('active');
+                        }
+                        this.classList.add('active');
+                        lastClickedLi = this;
+                    }
+                });
+                document.getElementById('pinned-locations').appendChild(li);
+            }
+
+            // Function that calls to Yelp Fusion v3 API for its information
+            // Implemented via Yelp documentation:
+            // https://docs.developer.yelp.com/docs/fusion-intro
+            function displayYelpInfo(placeId, li) {
+                var apiKey = "{{ yelp_key }}"
+                var url = `https://api.yelp.com/v3/businesses/${placeId}`;
+                fetch(url, {
+                    headers: {
+                    Authorization: `Bearer ${apiKey}`
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    var popup = document.createElement('div');
+                    popup.classList.add('popup');
+
+                    var header = document.createElement('div');
+                    header.classList.add('popup-header');
+                    header.innerHTML = `
+                    <h2>${data.name}</h2>
+                    <button class="popup-close">X</button>
+                    `;
+                    popup.appendChild(header);
+
+                    var content = document.createElement('div');
+                    content.classList.add('popup-content');
+                    content.innerHTML = `
+                    <p>Rating: ${data.rating}</p>
+                    <p>Phone: ${data.phone}</p>
+                    <p>Address: ${data.location.address1}, ${data.location.city}, ${data.location.state} ${data.location.zip_code}</p>
+                    <a href="${data.url}" target="_blank">Visit Yelp Page</a>
+                    `;
+                    popup.appendChild(content);
+
+                    var closeButton = header.querySelector('.popup-close');
+                    closeButton.addEventListener('click', function() {
+                    li.removeChild(popup);
+                    });
+
+                    li.appendChild(popup);
+                })
+                .catch(error => console.log('Error fetching Yelp API:', error));
+            }
+
+            // Function that removes the pin from the map and the restaurant from the list when the user selects the remove pin
+            function removePinnedLocation() {
+                // Last clicked restaurant gets removed rather than last pinned restaurant or first pinned
+                if (lastClickedLi) {
+                    var placeId = lastClickedLi.getAttribute('data-place-id');
+                    var marker = pinnedLocations[placeId];
+                    if (marker) {
+                    marker.setMap(null);
+                    delete pinnedLocations[placeId];
+                    delete pinnedMarker[placeId];
+                    lastClickedLi.parentNode.removeChild(lastClickedLi);
+                    }
+                    lastClickedLi = null;
+                    if (Object.keys(pinnedLocations).length === 0) {
+                    document.getElementById('remove-pin-button').style.display = 'none';
+                    }
+                }
+                }
+
+            // If the pin button is clicked, add a pin onto the map and into the list
+            if (document.getElementById('pin-button')) {
+                document.getElementById('pin-button').addEventListener('click', function() {
+                    var place = searchBox.getPlaces()[0];
+                    if (place){
+                        var placeId = place.place_id;
+                        if (pinnedLocations[placeId]) {
+                            var markerToRemove = pinnedLocations[placeId];
+                            removePinnedLocation(markerToRemove)
+                        }
+                        var newMarker = new google.maps.Marker({
+                            position: map.getCenter(),
+                            map: map,
+                            placeId: placeId
+                        });
+                        pinnedMarker[placeId] = newMarker;
+                        pinnedLocations[placeId] = newMarker;
+                        addPinnedLocation(place);
+                        if (document.getElementById('remove-pin-button').style.display == 'none') {
+                            document.getElementById('remove-pin-button').style.display = 'inline';
+                        }
+                    }
+                });
+            }
+
+            // Initiates the remove pin when the remove pin button is clicked
+            if (document.getElementById('remove-pin-button')) {
+                var removeButton = document.getElementById('remove-pin-button');
+                removeButton.addEventListener('click', removePinnedLocation);
+                removeButton.style.display = 'none';
+            }
+
+            // Listen for the event fired when the user selects a prediction and retrieve
+            // more details for that place.
+            searchBox.addListener('places_changed', function() {
+                var places = searchBox.getPlaces();
+
+                if (places.length == 0) {
+                    return;
+                }
+
+                if (marker) {
+                    marker.setMap(null);
+                }
+
+                // For each place, get the icon, name and location
+                var bounds = new google.maps.LatLngBounds();
+                places.forEach(function(place) {
+                    if (!place.geometry) {
+                        console.log("Returned place contains no geometry");
+                        return;
+                    }
+                    var icon = {
+                        url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                        size: new google.maps.Size(71, 71),
+                        origin: new google.maps.Point(0, 0),
+                        anchor: new google.maps.Point(17, 34),
+                        scaledSize: new google.maps.Size(25, 25)
+                    };
+
+                    // Creates a new marker for each place
+                    marker = new google.maps.Marker({
+                        map: map,
+                        icon: icon,
+                        title: place.name,
+                        position: place.geometry.location
+                    });
+
+                    // Search bounds all locations
+                    if (place.geometry.viewport) {
+                        bounds.union(place.geometry.viewport);
+                    } else {
+                        bounds.extend(place.geometry.location);
+                    }
+
+                    // Center and fit the map to the bounds
+                    map.fitBounds(bounds);
+
+                    // Set the map to the marker
+                    marker.setMap(map);
+
+                    // Display an info popup with details about the restaurant when clicked
+                    // Details are from google maps places API
+                    // Google maps places implemented via:
+                    // https://developers.google.com/maps/documentation/places/web-service
+                    marker.addListener('click', function() {
+                        var placeId = place.place_id;
+                        var service = new google.maps.places.PlacesService(map);
+                        service.getDetails({
+                            placeId: placeId
+                        }, function(place, status) {
+                            if (status === google.maps.places.PlacesServiceStatus.OK) {
+                                var contentString = '<div><strong>' + place.name + '</strong><br>' +
+                                    place.formatted_address + '<br>' +
+                                    'Rating: ' + place.rating + '<br>' +
+                                    'Phone: ' + place.formatted_phone_number + '<br>' +
+                                    '<a href="' + place.website + '">Website</a></div>';
+
+                                var infowindow = new google.maps.InfoWindow({
+                                    content: contentString
+                                });
+
+                                infowindow.open(map, marker);
+                            }
+                        });
+                    });
+                });
+                map.fitBounds(bounds);
+            })
+        };
+
+</script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&libraries=places&callback=initMap"></script>
+</body>
+</html>
