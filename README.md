@@ -1,3 +1,3 @@
-Repository for HCDE 310 WI23
+# HCDE 310 WI23 Final Project
 
 To Eat List
